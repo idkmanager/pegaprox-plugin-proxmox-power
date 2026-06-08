@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxmox VM Power Control</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --border:#2a323d;
+    --txt:#e6edf3; --muted:#8b97a6; --accent:#3b82f6; --accent2:#2563eb;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --chip:#21262d;
+    --radius:10px; --shadow:0 1px 0 rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+  header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.2px}
+  header .sub{color:var(--muted);font-size:12.5px}
+  .grow{flex:1}
+  select,button,input{font:inherit;color:var(--txt);background:var(--panel2);
+    border:1px solid var(--border);border-radius:8px;padding:8px 11px}
+  select:focus,button:focus,input:focus{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(59,130,246,.25)}
+  button{cursor:pointer;transition:transform .06s,background .15s,border-color .15s}
+  button:hover{border-color:#3a4451}
+  button:active{transform:scale(.97)}
+  button.primary{background:var(--accent2);border-color:var(--accent2)}
+  button.primary:hover{background:var(--accent)}
+  button.danger{background:#b3271f;border-color:#b3271f}
+  button.ghost{background:transparent}
+  .grid{display:grid;grid-template-columns:320px 1fr;gap:16px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--muted);margin:0;padding:13px 15px;border-bottom:1px solid var(--border)}
+  .card .body{padding:14px 15px}
+  .row{display:flex;align-items:center;gap:10px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip);
+    border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .dot.run{background:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:last-child td{border-bottom:none}
+  .muted{color:var(--muted)}
+  .pill{font-size:11px;padding:1px 8px;border-radius:6px;border:1px solid var(--border);background:var(--panel2)}
+  .pill.local{color:#8ab4f8} .pill.remote{color:#f0b450}
+  .state{font-weight:600}
+  .state.done{color:var(--ok)} .state.failed{color:var(--err)}
+  .state.simulated{color:#8ab4f8} .state.skipped{color:var(--muted)}
+  .state.pending,.state.running{color:var(--warn)}
+  .grouplist .g{padding:10px 12px;border:1px solid var(--border);border-radius:8px;
+    margin-bottom:8px;cursor:pointer;background:var(--panel2)}
+  .grouplist .g.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+  .grouplist .g .n{font-weight:600}
+  .empty{color:var(--muted);padding:26px 14px;text-align:center}
+  pre{background:#0a0d12;border:1px solid var(--border);border-radius:8px;
+    padding:12px;overflow:auto;font-size:12px;color:#cdd9e5;max-height:300px}
+  textarea{width:100%;min-height:280px;background:#0a0d12;color:#cdd9e5;
+    border:1px solid var(--border);border-radius:8px;padding:12px;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical}
+  .toast{position:fixed;right:18px;bottom:18px;background:var(--panel2);
+    border:1px solid var(--border);border-left:3px solid var(--accent);
+    border-radius:8px;padding:11px 14px;box-shadow:var(--shadow);max-width:380px;
+    opacity:0;transform:translateY(8px);transition:.2s}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{border-left-color:var(--err)} .toast.ok{border-left-color:var(--ok)}
+  .tabs{display:flex;gap:4px;margin-bottom:14px}
+  .tabs button{background:transparent;border:1px solid transparent;border-radius:8px;
+    color:var(--muted);padding:7px 13px}
+  .tabs button.active{color:var(--txt);background:var(--panel);border-color:var(--border)}
+  .bar{height:6px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:4px}
+  .bar > i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  label.ck{display:inline-flex;gap:7px;align-items:center;cursor:pointer;user-select:none}
+  small.k{color:var(--muted);font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>⚡ Proxmox VM Power Control</h1>
+      <div class="sub">Encendido/apagado orquestado con dependencias entre VM/CT, pre-flight y health-gating</div>
+    </div>
+    <div class="grow"></div>
+    <span class="chip"><span class="dot" id="clusterDot"></span><span id="clusterState">—</span></span>
+    <select id="clusterSel" title="Cluster"></select>
+    <button class="ghost" id="refreshBtn" title="Refrescar">↻</button>
+  </header>
+
+  <div class="tabs">
+    <button data-tab="ops" class="active">Operación</button>
+    <button data-tab="inv">Inventario</button>
+    <button data-tab="jobs">Trabajos</button>
+    <button data-tab="cfg">Configuración</button>
+  </div>
+
+  <!-- OPS -->
+  <section data-pane="ops">
+    <div class="grid">
+      <div class="card">
+        <h2>Grupos</h2>
+        <div class="body grouplist" id="groupList"><div class="empty">Cargando…</div></div>
+      </div>
+      <div class="card">
+        <h2>Plan de ejecución</h2>
+        <div class="body">
+          <div class="toolbar">
+            <button id="preflightBtn">Pre-flight</button>
+            <button id="planStartBtn">Plan ▶ Start</button>
+            <button id="planStopBtn">Plan ⏹ Stop</button>
+            <div class="grow"></div>
+            <label class="ck"><input type="checkbox" id="confirmCk"> Ejecución real</label>
+            <button class="primary" id="execBtn">Ejecutar</button>
+          </div>
+          <div id="planArea"><div class="empty">Elige un grupo y genera un plan.</div></div>
+          <div id="preflightArea"></div>
+          <div id="jobArea"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section data-pane="inv" hidden>
+    <div class="card"><h2>Inventario del cluster</h2>
+      <div class="body" id="invArea"><div class="empty">Cargando…</div></div></div>
+  </section>
+
+  <!-- JOBS -->
+  <section data-pane="jobs" hidden>
+    <div class="card"><h2>Trabajos recientes</h2>
+      <div class="body" id="jobsArea"><div class="empty">Sin trabajos.</div></div></div>
+  </section>
+
+  <!-- CONFIG -->
+  <section data-pane="cfg" hidden>
+    <div class="card"><h2>Configuración de grupos (JSON)</h2>
+      <div class="body">
+        <p class="muted" style="margin-top:0">Define grupos con <code>members</code> (vmid, order, suborder, depends_on, health). El backend valida orden y ciclos al guardar.</p>
+        <textarea id="cfgEditor" spellcheck="false"></textarea>
+        <div class="toolbar" style="margin-top:12px">
+          <button id="cfgReload" class="ghost">Recargar</button>
+          <div class="grow"></div>
+          <button id="cfgSave" class="primary">Guardar configuración</button>
+        </div>
+      </div></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = location.pathname.replace(/\/ui\/?$/, '');
+const $ = s => document.querySelector(s);
+const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+let state = { cluster:null, groups:[], group:null, jobTimer:null };
+
+function toast(msg, kind){const t=$('#toast');t.className='toast show '+(kind||'');t.textContent=msg;
+  clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',3200);}
+
+async function api(path, opts){
+  const r = await fetch(BASE+'/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || ('HTTP '+r.status) + (j.detail?': '+j.detail:''));
+  return j;
+}
+
+// ---- clusters ----
+async function loadClusters(){
+  try{
+    const {clusters} = await api('clusters');
+    const sel = $('#clusterSel'); sel.innerHTML='';
+    clusters.forEach(c=>{const o=el('option');o.value=c.id;
+      o.textContent=c.name+(c.connected?'':' (offline)');sel.appendChild(o);});
+    if(clusters.length){ state.cluster = sel.value = clusters[0].id;
+      const c=clusters[0]; setClusterState(c.connected); }
+  }catch(e){ toast(e.message,'err'); }
+}
+function setClusterState(ok){ $('#clusterDot').className='dot '+(ok?'ok':'err');
+  $('#clusterState').textContent= ok?'conectado':'offline'; }
+
+// ---- groups / config ----
+async function loadGroups(){
+  try{
+    const cfg = await api('config'); state.groups = cfg.groups||[];
+    const box=$('#groupList'); box.innerHTML='';
+    if(!state.groups.length){ box.appendChild(el('div','empty','Sin grupos. Crea uno en Configuración.')); return; }
+    state.groups.forEach(g=>{
+      const d=el('div','g'+(state.group===g.id?' sel':''));
+      d.innerHTML=`<div class="n">${g.name||g.id}</div>
+        <div class="muted" style="font-size:12px">${(g.members||[]).length} miembros · id ${g.id}</div>`;
+      d.onclick=()=>{state.group=g.id;loadGroups();$('#planArea').innerHTML='<div class="empty">Genera un plan.</div>';};
+      box.appendChild(d);
+    });
+  }catch(e){ toast(e.message,'err'); }
+}
+
+function needGroup(){ if(!state.group){toast('Elige un grupo','err');return false;} return true; }
+function body(extra){ return JSON.stringify(Object.assign({cluster_id:state.cluster,group:state.group},extra||{})); }
+
+// ---- preflight ----
+async function preflight(){
+  if(!needGroup())return;
+  $('#preflightArea').innerHTML='<div class="empty">Ejecutando pre-flight…</div>';
+  try{
+    const r=await api('preflight',{method:'POST',body:body()});
+    const rows=r.checks.map(c=>`<tr><td><span class="dot ${c.ok?'ok':'err'}"></span></td>
+      <td>${c.id}</td><td class="muted">${c.detail||''}</td></tr>`).join('');
+    $('#preflightArea').innerHTML=`<div class="card" style="margin-top:14px"><h2>Pre-flight — ${r.ok?'OK':'PROBLEMAS'} · ${r.posture.mode}${r.posture.quorate?' (quorate)':''}</h2>
+      <div class="body"><table><tbody>${rows}</tbody></table></div></div>`;
+  }catch(e){ $('#preflightArea').innerHTML=''; toast(e.message,'err'); }
+}
+
+// ---- plan ----
+async function plan(action){
+  if(!needGroup())return;
+  $('#planArea').innerHTML='<div class="empty">Calculando plan…</div>';
+  try{
+    const r=await api('plan',{method:'POST',body:body({action})});
+    renderPlan(r);
+  }catch(e){ $('#planArea').innerHTML=''; toast(e.message,'err'); }
+}
+function renderPlan(r){
+  if(!r.steps.length){$('#planArea').innerHTML='<div class="empty">Plan vacío.</div>';return;}
+  const rows=r.steps.map((s,i)=>`<tr>
+    <td class="muted">${i+1}</td>
+    <td><b>${s.name}</b> <small class="k">#${s.vmid}</small></td>
+    <td>${s.type||'?'} · ${s.node||'?'}</td>
+    <td><span class="pill ${s.placement}">${s.placement}</span></td>
+    <td>${s.depends_on.length?('↳ '+s.depends_on.join(', ')):'<span class="muted">—</span>'}</td>
+    <td class="${s.storage_state==='ok'?'':'state failed'}">${s.storage_state}</td>
+    <td class="muted">${s.noop?'no-op ('+s.current_status+')':s.current_status}</td>
+  </tr>`).join('');
+  $('#planArea').innerHTML=`<div class="row" style="margin-bottom:8px">
+      <span class="chip">${r.action==='start'?'▶ START':'⏹ STOP'}</span>
+      <span class="muted">${r.steps.length} pasos · orden ${r.action==='stop'?'inverso':'directo'}</span></div>
+    <table><thead><tr><th>#</th><th>Guest</th><th>Ubicación</th><th>Storage</th><th>Depende</th><th>Estado storage</th><th>Actual</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  state.lastAction=r.action;
+}
+
+// ---- execute ----
+async function execute(){
+  if(!needGroup())return;
+  const action=state.lastAction||'start';
+  const confirm=$('#confirmCk').checked;
+  if(confirm && !window.confirm(`EJECUCIÓN REAL: ${action.toUpperCase()} del grupo "${state.group}". ¿Continuar?`))return;
+  try{
+    const r=await api('execute',{method:'POST',body:body({action,confirm})});
+    toast(`Job ${r.job_id} lanzado (${r.dry_run?'dry-run':'REAL'}, ${r.steps} pasos)`, r.dry_run?'':'ok');
+    pollJob(r.job_id);
+  }catch(e){ toast(e.message,'err'); }
+}
+async function pollJob(id){
+  clearInterval(state.jobTimer);
+  const tick=async()=>{
+    try{
+      const j=await api('job?id='+encodeURIComponent(id));
+      renderJob(j);
+      if(j.status!=='running') clearInterval(state.jobTimer);
+    }catch(e){ clearInterval(state.jobTimer); }
+  };
+  state.jobTimer=setInterval(tick,1500); tick();
+}
+function renderJob(j){
+  const done=j.steps.filter(s=>['done','simulated','skipped','failed'].includes(s.state)).length;
+  const pct=j.steps.length?Math.round(done/j.steps.length*100):0;
+  const rows=j.steps.map(s=>`<tr>
+    <td><b>${s.name}</b> <small class="k">#${s.vmid}</small></td>
+    <td class="state ${s.state}">${s.state}</td>
+    <td class="muted">${s.detail||''}</td></tr>`).join('');
+  $('#jobArea').innerHTML=`<div class="card" style="margin-top:14px">
+    <h2>${j.id} · ${j.action} · ${j.dry_run?'dry-run':'REAL'} · <span class="state ${j.status}">${j.status}</span></h2>
+    <div class="body"><div class="bar"><i style="width:${pct}%"></i></div>
+    <table style="margin-top:10px"><tbody>${rows||''}</tbody></table></div></div>`;
+}
+
+// ---- inventory ----
+async function loadInventory(){
+  $('#invArea').innerHTML='<div class="empty">Cargando…</div>';
+  try{
+    const r=await api('inventory?cluster_id='+encodeURIComponent(state.cluster));
+    const rows=r.vms.map(v=>`<tr>
+      <td>#${v.vmid}</td><td><b>${v.name||''}</b></td>
+      <td>${v.type}</td><td>${v.node}</td>
+      <td><span class="dot ${v.status==='running'?'ok':'warn'}"></span> ${v.status}</td></tr>`).join('');
+    $('#invArea').innerHTML=`<div class="muted" style="margin-bottom:8px">${r.count} guests</div>
+      <table><thead><tr><th>VMID</th><th>Nombre</th><th>Tipo</th><th>Nodo</th><th>Estado</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }catch(e){ $('#invArea').innerHTML=''; toast(e.message,'err'); }
+}
+
+// ---- jobs ----
+async function loadJobs(){
+  try{
+    const r=await api('jobs');
+    if(!r.jobs.length){$('#jobsArea').innerHTML='<div class="empty">Sin trabajos.</div>';return;}
+    const rows=r.jobs.map(j=>`<tr>
+      <td>${j.id}</td><td>${j.group}</td><td>${j.action}</td>
+      <td>${j.dry_run?'dry-run':'REAL'}</td>
+      <td class="state ${j.status}">${j.status}</td>
+      <td class="muted">${j.started}</td><td>${j.user}</td></tr>`).join('');
+    $('#jobsArea').innerHTML=`<table><thead><tr><th>Job</th><th>Grupo</th><th>Acción</th><th>Modo</th><th>Estado</th><th>Inicio</th><th>Usuario</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }catch(e){ toast(e.message,'err'); }
+}
+
+// ---- config editor ----
+async function loadCfgEditor(){
+  try{ const cfg=await api('config'); $('#cfgEditor').value=JSON.stringify(cfg,null,2); }
+  catch(e){ toast(e.message,'err'); }
+}
+async function saveCfg(){
+  let parsed;
+  try{ parsed=JSON.parse($('#cfgEditor').value); }
+  catch(e){ toast('JSON inválido: '+e.message,'err'); return; }
+  try{
+    const r=await api('config/save',{method:'POST',body:JSON.stringify({groups:parsed.groups||[]})});
+    toast(`Guardado (${r.groups} grupos)`,'ok'); loadGroups();
+  }catch(e){ toast(e.message,'err'); }
+}
+
+// ---- wiring ----
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  const t=b.dataset.tab;
+  document.querySelectorAll('section[data-pane]').forEach(s=>s.hidden=s.dataset.pane!==t);
+  if(t==='inv')loadInventory(); if(t==='jobs')loadJobs(); if(t==='cfg')loadCfgEditor();
+});
+$('#clusterSel').onchange=e=>{state.cluster=e.target.value;loadClusters();};
+$('#refreshBtn').onclick=()=>{loadClusters();loadGroups();};
+$('#preflightBtn').onclick=preflight;
+$('#planStartBtn').onclick=()=>plan('start');
+$('#planStopBtn').onclick=()=>plan('stop');
+$('#execBtn').onclick=execute;
+$('#cfgReload').onclick=loadCfgEditor;
+$('#cfgSave').onclick=saveCfg;
+
+(async()=>{ await loadClusters(); await loadGroups(); })();
+</script>
+</body>
+</html>

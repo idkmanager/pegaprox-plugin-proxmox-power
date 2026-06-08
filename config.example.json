@@ -1,0 +1,50 @@
+{
+  "groups": [
+    {
+      "id": "core-infra",
+      "name": "Core Infrastructure",
+      "cluster_id": "1bf1b938",
+      "settings": {
+        "stop_mode": "shutdown",
+        "step_timeout_sec": 300,
+        "poll_interval_sec": 3,
+        "storage_wait_sec": 120,
+        "continue_on_error": false
+      },
+      "members": [
+        {
+          "vmid": 110,
+          "name": "shared-storage-gw",
+          "order": 10,
+          "suborder": 0,
+          "depends_on": [],
+          "health": { "mode": "status", "delay_sec": 5 },
+          "_comment": "iSCSI/NFS gateway — must be up before anything on remote storage"
+        },
+        {
+          "vmid": 100,
+          "name": "postgres",
+          "order": 20,
+          "depends_on": [110],
+          "health": { "mode": "agent", "timeout_sec": 180 }
+        },
+        {
+          "vmid": 101,
+          "name": "app-api",
+          "order": 30,
+          "suborder": 0,
+          "depends_on": [100],
+          "health": { "mode": "agent", "delay_sec": 10 }
+        },
+        {
+          "vmid": 102,
+          "name": "app-worker",
+          "order": 30,
+          "suborder": 1,
+          "depends_on": [100],
+          "health": { "mode": "status" }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Proxmox VM Power Control",
+  "version": "1.0.0",
+  "author": "IDKMANAGER",
+  "description": "Orchestrated, dependency-aware power control of Proxmox VMs/LXC across a cluster. Models a cross-node dependency graph (depends_on + order/suborder), runs the operator pre-flight checklist (cluster/host/storage/boot/posture), and health-gates every start/stop step. Reuses PegaProx's authenticated cluster manager.",
+  "min_version": "0.9.3",
+  "min_pegaprox": "0.9.9.3",
+  "license": "MIT",
+  "has_frontend": true,
+  "frontend_route": "ui"
+}
