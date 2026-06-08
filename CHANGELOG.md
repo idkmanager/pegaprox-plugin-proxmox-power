@@ -3,6 +3,17 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-06-07
+
+### Fixed
+- **install.sh no longer fails on encrypted PegaProx DBs.** Newer PegaProx
+  encrypts its SQLite DB (dbcrypto/SQLCipher), so an external `sqlite3` enable
+  step failed with *"file is not a database (26)"* and — under `set -e` —
+  aborted before restarting. The installer now probes for a plain DB, only
+  writes `plugin_state` when it can, never aborts, always restarts, and clearly
+  directs the operator to enable the plugin from **Settings → Plugins** in the
+  UI (the encryption-agnostic path). README updated accordingly.
+
 ## [1.0.1] - 2026-06-07
 
 ### Fixed (self-review hardening, pre-deploy)

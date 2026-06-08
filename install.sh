@@ -24,14 +24,23 @@ if [ ! -f "$DEST/config.json" ]; then
 fi
 chmod 600 "$DEST/config.json"
 
-# Enable the plugin in the SQLite plugin_state table (idempotent).
-if command -v sqlite3 >/dev/null 2>&1 && [ -f "$DB" ]; then
-  sqlite3 "$DB" "INSERT INTO plugin_state (plugin_id, enabled) VALUES ('$PLUGIN_ID', 1)
-    ON CONFLICT(plugin_id) DO UPDATE SET enabled=1;" || \
-  sqlite3 "$DB" "INSERT OR REPLACE INTO plugin_state (plugin_id, enabled) VALUES ('$PLUGIN_ID', 1);"
-  echo "==> Enabled in plugin_state"
-else
-  echo "!! sqlite3 or DB missing — enable '$PLUGIN_ID' from Settings > Plugins"
+# Try to enable the plugin in plugin_state — but only if the DB is a *plain*
+# SQLite file. Newer PegaProx encrypts the DB via dbcrypto/SQLCipher, where an
+# external sqlite3 fails with "file is not a database (26)". In that case (and
+# any other), we never touch the DB and just tell the operator to flip the
+# toggle in the UI. This step must never abort the install.
+ENABLED_VIA_DB=0
+if command -v sqlite3 >/dev/null 2>&1 && [ -f "$DB" ] \
+   && sqlite3 "$DB" "PRAGMA schema_version;" >/dev/null 2>&1; then
+  if sqlite3 "$DB" "INSERT OR REPLACE INTO plugin_state (plugin_id, enabled) VALUES ('$PLUGIN_ID', 1);" 2>/dev/null; then
+    ENABLED_VIA_DB=1
+    echo "==> Enabled in plugin_state (plain SQLite)"
+  fi
+fi
+if [ "$ENABLED_VIA_DB" -eq 0 ]; then
+  echo "!! Could not auto-enable via the DB (it is encrypted or locked — normal)."
+  echo "   Files are installed. Enable it from the web UI:"
+  echo "     PegaProx > Settings > Plugins > 'Proxmox VM Power Control' > Enable"
 fi
 
 # Best-effort ownership match to the rest of the install.
@@ -40,4 +49,9 @@ chown -R "$OWNER" "$DEST" 2>/dev/null || true
 
 echo "==> Restarting pegaprox"
 systemctl restart pegaprox || echo "!! restart manually: systemctl restart pegaprox"
-echo "==> Done. Open the 'Proxmox VM Power Control' tab in PegaProx."
+echo "==> Done."
+if [ "$ENABLED_VIA_DB" -eq 1 ]; then
+  echo "    Open the 'Proxmox VM Power Control' tab in PegaProx."
+else
+  echo "    Now enable it: PegaProx > Settings > Plugins > 'Proxmox VM Power Control' > Enable."
+fi

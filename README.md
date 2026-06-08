@@ -86,12 +86,19 @@ Health modes: `agent` (qemu guest-agent ping), `status` (poll until `running`),
 ## Install
 
 ```bash
-sudo bash install.sh         # on the PegaProx host (LXC 119)
+sudo bash install.sh         # on the PegaProx host
 ```
 
-Or manually: copy the plugin dir to `/opt/PegaProx/plugins/proxmox-power/`,
-create `config.json`, `INSERT INTO plugin_state (plugin_id, enabled) VALUES ('proxmox-power', 1)`,
-then `systemctl restart pegaprox`.
+The installer copies the files and restarts PegaProx. It tries to enable the
+plugin automatically, but **on instances with an encrypted DB (dbcrypto /
+SQLCipher) it cannot** — an external `sqlite3` fails with *"file is not a
+database (26)"*. That's expected; just enable it from the web UI:
+
+> **PegaProx → Settings → Plugins → "Proxmox VM Power Control" → Enable**
+
+Manual install: copy the plugin dir to `/opt/PegaProx/plugins/proxmox-power/`,
+`echo '{ "groups": [] }' > config.json`, `systemctl restart pegaprox`, then
+enable it from Settings → Plugins (works regardless of DB encryption).
 
 ## Develop
 
