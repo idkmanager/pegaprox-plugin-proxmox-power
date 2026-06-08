@@ -209,9 +209,16 @@
           </div>
         </details>
 
-        <h3 style="margin:18px 0 8px;font-size:13px">Miembros (VM/CT en orden de arranque)</h3>
+        <h3 style="margin:18px 0 4px;font-size:13px">Miembros (VM/CT en orden de arranque)</h3>
+        <p class="muted" style="margin:0 0 8px;font-size:11.5px">En cada miembro, marca en <b>"Arranca después de:"</b> de qué otros depende (clic en el chip: <span class="depchip off" style="pointer-events:none">+ ejemplo</span> → <span class="depchip" style="pointer-events:none">✓ ejemplo</span>). O usa los atajos de abajo.</p>
         <div id="geMembers"></div>
-        <button id="geAddMember" class="ghost" style="margin-top:8px">+ Agregar miembro</button>
+        <div class="toolbar" style="margin-top:8px;gap:8px">
+          <button id="geAddMember" class="ghost">+ Agregar miembro</button>
+          <div class="grow"></div>
+          <button id="geDepFirst" class="ghost" title="Todos los demás dependen del primer miembro">Todos dependen del 1º</button>
+          <button id="geDepChain" class="ghost" title="Cada miembro depende del anterior, por orden">Encadenar en orden</button>
+          <button id="geDepClear" class="ghost" title="Quitar todas las dependencias">Quitar deps</button>
+        </div>
 
         <div class="toolbar" style="margin-top:16px">
           <button id="geCancel" class="ghost">Cancelar</button>
@@ -471,6 +478,18 @@ async function openEditor(g){
   $('#groupEditorCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function closeEditor(){ $('#groupEditorCard').hidden=true; edit=null; }
+
+// Quick dependency helpers (the common patterns, one click each).
+function depFirst(){ const ms=edit.members.filter(m=>m.vmid); if(ms.length<2){toast('Agrega al menos 2 miembros','err');return;}
+  const first=+ms[0].vmid; edit.members.forEach(m=>{ m.depends_on = (m.vmid && +m.vmid!==first)?[first]:[]; }); renderMembers();
+  toast(`Todos dependen de #${first}`,'ok'); }
+function depChain(){ const ms=edit.members.filter(m=>m.vmid)
+    .slice().sort((a,b)=>(a.order-b.order)||((a.suborder||0)-(b.suborder||0))||(a.vmid-b.vmid));
+  if(ms.length<2){toast('Agrega al menos 2 miembros','err');return;}
+  const prev={}; for(let i=0;i<ms.length;i++){ prev[ms[i].vmid] = i===0?[]:[+ms[i-1].vmid]; }
+  edit.members.forEach(m=>{ if(m.vmid) m.depends_on=prev[m.vmid]||[]; }); renderMembers();
+  toast('Encadenado por orden','ok'); }
+function depClear(){ edit.members.forEach(m=>m.depends_on=[]); renderMembers(); toast('Dependencias quitadas',''); }
 function blankMember(){ const nextOrder=(edit.members.reduce((m,x)=>Math.max(m,x.order||0),0)||0)+10;
   return {vmid:'',order:nextOrder,suborder:0,depends_on:[],health:{mode:'status'},storage_policy:'wait'}; }
 
@@ -619,6 +638,9 @@ $('#checkUpdBtn').onclick=checkUpdate;
 $('#applyUpdBtn').onclick=applyUpdate;
 $('#newGroupBtn').onclick=()=>openEditor(null);
 $('#geAddMember').onclick=()=>{ edit.members.push(blankMember()); renderMembers(); };
+$('#geDepFirst').onclick=depFirst;
+$('#geDepChain').onclick=depChain;
+$('#geDepClear').onclick=depClear;
 $('#geCancel').onclick=closeEditor;
 $('#geSave').onclick=saveGroup;
 

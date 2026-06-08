@@ -1,6 +1,6 @@
 {
   "name": "Powvm Control",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "author": "IDKMANAGER",
   "description": "Orchestrated, dependency-aware power control of Proxmox VMs/LXC across a cluster. Models a cross-node dependency graph (depends_on + order/suborder), runs the operator pre-flight checklist (cluster/host/storage/boot/posture), and health-gates every start/stop step. Reuses PegaProx's authenticated cluster manager.",
   "min_version": "0.9.3",

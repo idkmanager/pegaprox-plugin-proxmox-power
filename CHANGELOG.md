@@ -3,6 +3,18 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] - 2026-06-07
+
+### Added — make dependencies foolproof (Carlos kept getting an empty DEPENDE)
+- **Quick dependency shortcuts** in the group editor: *"Todos dependen del 1º"*
+  (hub — every other member depends on the first), *"Encadenar en orden"*
+  (chain — each depends on the previous by order), and *"Quitar deps"*.
+- A visible hint shows that the *"Arranca después de:"* chips are clickable
+  (`+ off` → `✓ on`).
+- Confirmed (live, 5-member group, deps set via chips): the plan's DEPENDE column
+  renders `↳ <vmid>` correctly. The recurring empty column was groups saved
+  without activating any dependency — now a single click sets them.
+
 ## [1.4.1] - 2026-06-07
 
 ### Fixed (group form, reported by Carlos)
