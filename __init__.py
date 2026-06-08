@@ -101,7 +101,9 @@ _DEFAULT_GROUP_SETTINGS = {
     'stop_mode': 'shutdown',     # 'shutdown' (graceful) | 'stop' (hard)
     'step_timeout_sec': 300,     # max wait for a single member to become healthy
     'poll_interval_sec': 3,      # how often to poll status while waiting
-    'storage_wait_sec': 120,     # max wait for a storage to become active
+    'storage_wait_sec': 120,     # max wait for a storage to become active (per member, spec 6)
+    'storage_ready_sec': 0,      # wait for ALL backing storage to be live before the
+                                 # sequence even starts (spec 6/7; 0 = off, rely on per-member gate)
     'host_wait_sec': 60,         # max wait for the target node to be online (spec 1)
     'ignore_maintenance': False, # if True, act even when the node is in HA maintenance (spec 1.1)
     'continue_on_error': False,  # abort the run on the first failed step
@@ -875,6 +877,57 @@ def _storage_gate(manager, step, settings, poll):
     return ('ok', None) if ok else ('fail', err)
 
 
+def _required_storages(steps):
+    """{node: set(storage_ids)} that the plan's startable members need to boot.
+
+    Only members we intend to actually wait on (policy 'wait', present, not
+    already running, on a real start) contribute — a 'skip'/'fail' member must
+    not hold up the whole sequence for storage that may be offline on purpose.
+    """
+    req = {}
+    for s in steps:
+        if s.get('action') != 'start' or s.get('noop') or not s.get('present'):
+            continue
+        if s.get('storage_policy', 'wait') != 'wait':
+            continue
+        node = s.get('node')
+        if not node:
+            continue
+        for entry in s.get('storage', []):
+            req.setdefault(node, set()).add(entry['storage'])
+    return req
+
+
+def _wait_storage_ready(manager, steps, timeout_sec, poll, job=None):
+    """Spec 6/7: before the boot sequence begins, loop until EVERY backing
+    storage the plan needs is active across its node(s), or timeout.
+
+    Returns (ok, detail). After a power event the shared backend (NVMe-oF / NFS /
+    iSCSI) can take minutes to come live; this holds the whole sequence — not
+    just the first VM — until storage is up. Caller decides what to do on
+    timeout (we log and let the per-member gate make the final call)."""
+    req = _required_storages(steps)
+    if not req:
+        return True, None
+    deadline = time.time() + max(0, timeout_sec)
+    while True:
+        pending = []
+        for node, stores in req.items():
+            live = fetch_storage_for_node(manager, node)
+            for sid in sorted(stores):
+                if not storage_available(live.get(sid)):
+                    pending.append(f'{node}:{sid}')
+        if not pending:
+            if job:
+                _job_log(job, 'storage live — starting sequence')
+            return True, None
+        if time.time() >= deadline:
+            return False, 'storage not live: ' + ', '.join(sorted(pending))
+        if job:
+            _job_log(job, f'waiting for storage to come live: {", ".join(sorted(pending))}')
+        time.sleep(poll)
+
+
 def _start_guest(manager, step, settings, poll, ha_states):
     """Spec 8: ordered start with local/remote branch (8.1/8.2)."""
     node, vtype, vmid = step['node'], step['type'], step['vmid']
@@ -991,6 +1044,18 @@ def _execute_job(job, manager, group, inventory, steps):
             rec = dict(step, state='pending', detail=None, ts=_now_iso())
             job['steps'].append(rec)
             recs.append(rec)
+
+    # Spec 6/7: hold the WHOLE sequence until the backing storage is live (e.g.
+    # after a power event the shared array is still coming up). Best-effort: on
+    # timeout we log and fall through to the per-member gate, which then applies
+    # each member's storage_policy. Skipped for dry-run.
+    if action == 'start' and not dry:
+        ready_sec = int(settings.get('storage_ready_sec', 0) or 0)
+        if ready_sec > 0:
+            ok_s, err_s = _wait_storage_ready(manager, steps, ready_sec, poll, job)
+            if not ok_s:
+                _job_log(job, f'storage not live after {ready_sec}s ({err_s}); '
+                              'proceeding — per-member storage policy will decide')
 
     # Group consecutive same-wave steps into parallel batches.
     waves = []
@@ -1184,6 +1249,7 @@ _DEFAULT_AUTOSTART = {
     'groups': [],            # ordered list of group ids to start, in order
     'delay_sec': 30,         # grace after PegaProx is up before firing
     'wait_cluster_sec': 300, # max wait for the cluster manager to connect
+    'storage_ready_sec': 600,# wait for shared storage to come live before starting (spec 6/7)
     'stop_on_error': False,  # stop launching later groups after a failed one
 }
 
@@ -1283,6 +1349,14 @@ def _run_autostart_groups(settings, username='autostart', dry_run=False, sync=Tr
             if settings.get('stop_on_error'):
                 break
             continue
+        # Hold the sequence until shared storage is live (spec 6/7). Apply the
+        # autostart-wide wait unless the group already asks for a longer one.
+        ready_sec = int(settings.get('storage_ready_sec', 0) or 0)
+        if ready_sec:
+            group = dict(group)
+            gs = dict(group.get('settings') or {})
+            gs['storage_ready_sec'] = max(int(gs.get('storage_ready_sec', 0) or 0), ready_sec)
+            group['settings'] = gs
         try:
             job, steps = _dispatch_group(manager, cluster_id, group, 'start', dry_run, username, sync=sync)
             results.append({'group': gid, 'job': job['id'], 'steps': len(steps),
@@ -1607,7 +1681,7 @@ def autostart_save_handler():
     if not isinstance(groups, list):
         return jsonify({'error': 'autostart.groups must be a list'}), 400
     out['groups'] = [str(g) for g in groups]
-    for key, lo in (('delay_sec', 0), ('wait_cluster_sec', 0)):
+    for key, lo in (('delay_sec', 0), ('wait_cluster_sec', 0), ('storage_ready_sec', 0)):
         try:
             out[key] = max(lo, int(a.get(key, _DEFAULT_AUTOSTART[key])))
         except (TypeError, ValueError):

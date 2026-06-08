@@ -3,6 +3,27 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-06-08
+
+### Added — wait for storage to be live before the sequence starts (spec 6/7)
+- **Sequence-level storage gate.** Before the boot sequence begins, the run now
+  loops until EVERY backing storage the plan needs is active across its node(s).
+  After a power event the shared backend (NVMe-oF / NFS / iSCSI) can take minutes
+  to come up; previously only the per-member gate waited (and only `storage_wait_sec`,
+  default 120 s), so phase 1 could start before storage was ready.
+  - `_required_storages()` / `_wait_storage_ready()`: collect the storages of the
+    members we actually intend to wait on (present, not no-op, policy `wait`) and
+    poll until all active or timeout. `skip`/`fail` members never hold up the run.
+  - New group setting **`storage_ready_sec`** (default 0 = off, rely on per-member
+    gate). When > 0, `_execute_job` holds the whole sequence up front. On timeout
+    it logs and falls through to the per-member policy (best-effort, not a hard
+    abort). Skipped for dry-run.
+- **Autostart waits for storage by default.** `autostart.storage_ready_sec`
+  (default **600 s**) is applied to each group at boot (max with the group's own),
+  so unattended boot after a power event holds until shared storage is live.
+- **UI:** group editor (Avanzado) → "Esperar storage listo antes de arrancar (s)";
+  autostart panel → "Esperar a que el almacenamiento esté activo (s)".
+
 ## [1.7.0] - 2026-06-08
 
 ### Added — unattended boot when PegaProx comes up (opt-in)

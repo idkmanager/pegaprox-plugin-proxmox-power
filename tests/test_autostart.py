@@ -101,6 +101,26 @@ def test_run_autostart_groups_dry_run_creates_job(plugin, tmp_path, monkeypatch)
     assert res[0]['group'] == 'g' and res[0]['status'] == 'done' and 'job' in res[0]
 
 
+def test_run_autostart_injects_storage_ready_into_group(plugin, tmp_path, monkeypatch):
+    _point_config(plugin, tmp_path, monkeypatch, {
+        'groups': [{'id': 'g', 'cluster_id': 'c1',
+                    'settings': {'storage_ready_sec': 10},
+                    'members': [{'vmid': 100, 'order': 1}]}],
+        'autostart': {'enabled': True, 'groups': ['g'], 'storage_ready_sec': 600,
+                      'wait_cluster_sec': 1}})
+    monkeypatch.setattr(plugin, 'get_connected_manager', lambda cid: (_Mgr(), None))
+    captured = {}
+
+    def fake_dispatch(manager, cluster_id, group, action, dry_run, username, sync=False):
+        captured['settings'] = group.get('settings')
+        return {'id': 'job-x', 'status': 'done'}, []
+
+    monkeypatch.setattr(plugin, '_dispatch_group', fake_dispatch)
+    plugin._run_autostart_groups(plugin._autostart_settings(), sync=True)
+    # autostart-wide 600 wins over the group's own 10 (max)
+    assert captured['settings']['storage_ready_sec'] == 600
+
+
 def test_run_autostart_groups_fails_when_manager_never_connects(plugin, tmp_path, monkeypatch):
     _point_config(plugin, tmp_path, monkeypatch, {
         'groups': [{'id': 'g', 'cluster_id': 'c1', 'members': [{'vmid': 100, 'order': 1}]}],

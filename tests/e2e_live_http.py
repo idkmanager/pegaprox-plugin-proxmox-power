@@ -66,7 +66,7 @@ def main():
 
     # --- version via update/check ---
     code, j = jget('update/check')
-    ok('version 1.7.0', j.get('current') == '1.7.0', f"current={j.get('current')}")
+    ok('version 1.8.0', j.get('current') == '1.8.0', f"current={j.get('current')}")
 
     # --- clusters + inventory ---
     code, j = jget('clusters')
@@ -88,9 +88,13 @@ def main():
                         'depends_on': [pick[0]]})
     grp = {'id': 'e2e-timing', 'name': 'E2E timing', 'cluster_id': cid,
            'settings': {'stop_mode': 'shutdown', 'step_timeout_sec': 300,
-                        'storage_wait_sec': 120}, 'members': members}
+                        'storage_wait_sec': 120, 'storage_ready_sec': 45}, 'members': members}
     code, j = jpost('config/save', {'groups': [grp]})
     ok('config/save phase group', code == 200, json.dumps(j)[:120])
+    # storage_ready_sec round-trips (spec 6/7 sequence-level gate)
+    code, cfgj = jget('config')
+    saved_g = next((g for g in cfgj.get('groups', []) if g['id'] == 'e2e-timing'), {})
+    ok('storage_ready_sec persisted', saved_g.get('settings', {}).get('storage_ready_sec') == 45)
 
     # --- plan start: assert timing present + correct shape ---
     code, j = jpost('plan', {'cluster_id': cid, 'group': 'e2e-timing', 'action': 'start'})
@@ -150,8 +154,9 @@ def main():
     # save: arm for NEXT boot only (saving does not power anything on now)
     code, j = jpost('autostart/save', {'autostart': {
         'enabled': True, 'cluster_id': cid, 'groups': ['e2e-timing'],
-        'delay_sec': 0, 'wait_cluster_sec': 30}})
+        'delay_sec': 0, 'wait_cluster_sec': 30, 'storage_ready_sec': 600}})
     ok('autostart/save persists', code == 200 and j.get('autostart', {}).get('groups') == ['e2e-timing'])
+    ok('autostart storage_ready_sec', j.get('autostart', {}).get('storage_ready_sec') == 600)
     code, j = jpost('autostart/save', {'autostart': {'enabled': True, 'groups': ['does-not-exist']}})
     ok('autostart/save rejects unknown group', code == 400, f'HTTP {code}')
     # run now in DRY-RUN (default): previews the unattended boot, no VM mutated

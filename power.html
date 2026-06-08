@@ -198,6 +198,8 @@
               <input id="asDelay" type="number" min="0" step="5" value="30"></label>
             <label class="fld">Máx. espera de conexión al cluster (s)
               <input id="asWait" type="number" min="0" step="10" value="300"></label>
+            <label class="fld">Esperar a que el almacenamiento esté activo (s)
+              <input id="asStorageReady" type="number" min="0" step="30" value="600" title="Tras un corte el storage compartido tarda en levantar: la secuencia no arranca hasta que esté vivo, o hasta este límite"></label>
           </div>
           <h3 style="margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">Grupos a encender (en este orden)</h3>
           <div id="asGroups" class="asgroups"><div class="empty">Crea grupos abajo para elegirlos aquí.</div></div>
@@ -243,7 +245,8 @@
               <select id="seStopMode"><option value="shutdown">shutdown (suave)</option><option value="stop">stop (forzado)</option></select></label>
             <label class="fld">Timeout por paso (s)<input id="seStep" type="number" value="300"></label>
             <label class="fld">Intervalo de sondeo (s)<input id="sePoll" type="number" value="3"></label>
-            <label class="fld">Espera de storage (s)<input id="seStorage" type="number" value="120"></label>
+            <label class="fld">Espera de storage por VM (s)<input id="seStorage" type="number" value="120"></label>
+            <label class="fld">Esperar storage listo antes de arrancar (s)<input id="seStorageReady" type="number" min="0" value="0" title="0 = no esperar; espera a que TODO el almacenamiento esté activo antes de iniciar la secuencia"></label>
             <label class="fld">Espera de nodo (s)<input id="seHost" type="number" value="60"></label>
           </div>
           <div class="row" style="gap:18px;margin-top:10px;flex-wrap:wrap">
@@ -535,6 +538,7 @@ async function openEditor(g){
   $('#seStopMode').value=s.stop_mode||'shutdown';
   $('#seStep').value=s.step_timeout_sec??300; $('#sePoll').value=s.poll_interval_sec??3;
   $('#seStorage').value=s.storage_wait_sec??120; $('#seHost').value=s.host_wait_sec??60;
+  $('#seStorageReady').value=s.storage_ready_sec??0;
   $('#seIgnoreMaint').checked=!!s.ignore_maintenance; $('#seContinue').checked=!!s.continue_on_error;
   if(!edit.members.length) edit.members.push(blankMember());
   renderMembers();
@@ -638,6 +642,7 @@ function gatherGroup(){
   return {id,name,cluster_id:state.cluster,settings:{
     stop_mode:$('#seStopMode').value, step_timeout_sec:+$('#seStep').value,
     poll_interval_sec:+$('#sePoll').value, storage_wait_sec:+$('#seStorage').value,
+    storage_ready_sec:Math.max(0,+$('#seStorageReady').value||0),
     host_wait_sec:+$('#seHost').value, ignore_maintenance:$('#seIgnoreMaint').checked,
     continue_on_error:$('#seContinue').checked}, members};
 }
@@ -706,6 +711,7 @@ async function loadAutostart(){
     const r=await api('autostart/config'); asCfg=Object.assign(asCfg,r.settings||{});
     $('#asEnabled').checked=!!asCfg.enabled; $('#asBody').hidden=!asCfg.enabled;
     $('#asDelay').value=asCfg.delay_sec??30; $('#asWait').value=asCfg.wait_cluster_sec??300;
+    $('#asStorageReady').value=asCfg.storage_ready_sec??600;
     $('#asStopErr').checked=!!asCfg.stop_on_error;
     // cluster dropdown (reuse loaded clusters)
     const sel=$('#asCluster'); sel.innerHTML='';
@@ -748,7 +754,8 @@ async function saveAutostart(){
   const payload={autostart:{
     enabled:$('#asEnabled').checked, cluster_id:$('#asCluster').value||'',
     groups:asCfg.groups||[], delay_sec:+$('#asDelay').value||0,
-    wait_cluster_sec:+$('#asWait').value||0, stop_on_error:$('#asStopErr').checked}};
+    wait_cluster_sec:+$('#asWait').value||0, storage_ready_sec:Math.max(0,+$('#asStorageReady').value||0),
+    stop_on_error:$('#asStopErr').checked}};
   try{ const r=await api('autostart/save',{method:'POST',body:JSON.stringify(payload)});
     asCfg=r.autostart; toast('Arranque automático guardado','ok');
   }catch(e){ toast(e.message,'err'); }

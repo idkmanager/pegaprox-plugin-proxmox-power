@@ -260,6 +260,54 @@ def test_same_order_members_start_in_parallel(plugin):
     assert any(u.endswith('/nodes/pve1/qemu/535/status/start') for _, u in mgr.calls)
 
 
+def test_required_storages_filters_noop_skip_absent(plugin):
+    steps = [
+        {'action': 'start', 'present': True, 'noop': False, 'storage_policy': 'wait',
+         'node': 'pve1', 'storage': [{'storage': 'a'}]},
+        {'action': 'start', 'present': True, 'noop': True, 'storage_policy': 'wait',
+         'node': 'pve1', 'storage': [{'storage': 'b'}]},   # already running -> excluded
+        {'action': 'start', 'present': True, 'noop': False, 'storage_policy': 'skip',
+         'node': 'pve1', 'storage': [{'storage': 'c'}]},    # skip -> excluded
+        {'action': 'start', 'present': False, 'noop': False, 'storage_policy': 'wait',
+         'node': 'pve2', 'storage': [{'storage': 'd'}]},    # absent -> excluded
+    ]
+    assert plugin._required_storages(steps) == {'pve1': {'a'}}
+
+
+def test_wait_storage_ready_ok_when_active(plugin):
+    mgr = FakeManager(storage={'pve1': {'a': {'type': 'nfs', 'enabled': 1, 'active': 1, 'shared': 1}}})
+    steps = [{'action': 'start', 'present': True, 'noop': False, 'storage_policy': 'wait',
+              'node': 'pve1', 'storage': [{'storage': 'a'}]}]
+    ok, err = plugin._wait_storage_ready(mgr, steps, 1, 0)
+    assert ok is True and err is None
+
+
+def test_wait_storage_ready_times_out_when_inactive(plugin):
+    mgr = FakeManager(storage={'pve1': {'a': {'type': 'nfs', 'enabled': 1, 'active': 0}}})
+    steps = [{'action': 'start', 'present': True, 'noop': False, 'storage_policy': 'wait',
+              'node': 'pve1', 'storage': [{'storage': 'a'}]}]
+    ok, err = plugin._wait_storage_ready(mgr, steps, 0, 0)
+    assert ok is False and 'pve1:a' in err
+
+
+def test_execute_job_waits_storage_live_before_sequence(plugin):
+    # storage_ready_sec>0: the sequence holds for storage, then starts the VM.
+    mgr = FakeManager(status_script={100: ['stopped', 'running']},
+                      storage={'pve1': {'lun0': {'type': 'iscsi', 'enabled': 1, 'active': 1}}})
+    group = {'id': 'g', 'settings': {'poll_interval_sec': 0, 'host_wait_sec': 1,
+                                     'step_timeout_sec': 3, 'storage_ready_sec': 5},
+             'members': [{'vmid': 100, 'order': 1, 'health': {'mode': 'status'}}]}
+    inv = {100: {'node': 'pve1', 'name': 'db', 'type': 'qemu', 'status': 'stopped'}}
+    cfgs = {100: {'scsi0': 'lun0:vm-100-disk-0'}}
+    storage = {'pve1': {'lun0': {'type': 'iscsi', 'enabled': 1, 'active': 1}}}
+    steps = plugin.build_plan(group, inv, cfgs, storage, 'start')
+    job = _mk_job(plugin, 'start', dry_run=False)
+    plugin._execute_job(job, mgr, group, inv, steps)
+    assert job['status'] == 'done'
+    assert any('storage live' in l['msg'] for l in job['log'])
+    assert any(u.endswith('/status/start') for _, u in mgr.calls)
+
+
 def test_noop_running_vm_is_skipped(plugin):
     mgr = FakeManager()
     group = {'id': 'g', 'settings': {'poll_interval_sec': 0},
