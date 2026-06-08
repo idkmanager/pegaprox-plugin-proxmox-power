@@ -296,7 +296,8 @@ async function preflight(){
     const r=await api('preflight',{method:'POST',body:body()});
     const by=cat=>r.checks.filter(c=>(c.category||'')===cat);
     const line=c=>`<tr><td style="width:22px"><span class="dot ${c.ok?'ok':'err'}"></span></td>
-      <td>${c.id.replace(/^[a-z]+:/,'')}</td><td class="muted">${c.detail||''}</td></tr>`;
+      <td>${c.id.replace(/^[a-z]+:/,'')}${c.relevant?' <span class="pill" style="color:#8ab4f8">grupo</span>':''}</td>
+      <td class="muted">${(c.detail||'').replace(' · host del grupo','')}</td></tr>`;
     const sect=(title,rows)=> rows.length?`<div class="pfsec"><h3>${title}</h3><table><tbody>${rows.map(line).join('')}</tbody></table></div>`:'';
     // Storage gets a richer, explicit table (the validation the operator cares about).
     const st=by('storage');

@@ -3,6 +3,15 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-06-07
+
+### Fixed
+- **Pre-flight now lists every node in the cluster**, not only the nodes hosting
+  the group's members (reported by Carlos: a 1-member group showed a single
+  host). Member-hosting nodes are marked `grupo` and are the only ones that gate
+  the result; the rest are shown for full-cluster visibility and never turn the
+  pre-flight red on their own.
+
 ## [1.3.1] - 2026-06-07
 
 ### Improved — robust local/remote deduction

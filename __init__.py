@@ -562,19 +562,26 @@ def run_preflight(manager, group, inventory):
     needed_nodes = sorted({inventory.get(int(m['vmid']), {}).get('node')
                            for m in members if int(m['vmid']) in inventory})
     needed_nodes = [n for n in needed_nodes if n]
+    needed_set = set(needed_nodes)
 
-    # 1. node availability
-    for node in needed_nodes:
+    # 1 / 1.1 — show availability + maintenance for the WHOLE cluster, not just
+    # the nodes hosting this group's members. Only the member-hosting nodes
+    # ('critical') gate the overall result; the rest are informational so a
+    # node unrelated to the group doesn't turn the pre-flight red.
+    for node in sorted(nodes.keys()):
         entry = nodes.get(node, {})
         online = entry.get('status') == 'online'
+        relevant = node in needed_set
+        suffix = ' · host del grupo' if relevant else ''
         checks.append({
             'id': f'node:{node}', 'ok': online, 'category': 'node',
-            'detail': f"status={entry.get('status', 'unknown')}",
+            'relevant': relevant, 'critical': relevant,
+            'detail': f"status={entry.get('status', 'unknown')}{suffix}",
         })
-        # 1.1 maintenance status (HA). ok = not in maintenance.
         maint = node_in_maintenance(ha_states, node)
         checks.append({
             'id': f'maint:{node}', 'ok': not maint, 'category': 'node',
+            'relevant': relevant, 'critical': relevant,
             'detail': 'in HA maintenance' if maint else 'no maintenance',
         })
 
@@ -613,7 +620,9 @@ def run_preflight(manager, group, inventory):
             'detail': f"onboot={cfg.get('onboot', 0)} startup_order={startup['order']}",
         })
 
-    overall = all(c['ok'] for c in checks)
+    # Only 'critical' checks gate the result. Non-critical checks (cluster nodes
+    # that don't host a member) are shown for visibility but never fail it.
+    overall = all(c['ok'] for c in checks if c.get('critical', True))
     return {
         'ok': overall,
         'posture': posture,
