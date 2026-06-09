@@ -372,6 +372,21 @@ async function preflight(){
       <td>${c.id.replace(/^[a-z]+:/,'')}${c.relevant?' <span class="pill" style="color:#8ab4f8">grupo</span>':''}</td>
       <td class="muted">${(c.detail||'').replace(' · host del grupo','')}</td></tr>`;
     const sect=(title,rows)=> rows.length?`<div class="pfsec"><h3>${title}</h3><table><tbody>${rows.map(line).join('')}</tbody></table></div>`:'';
+    // Nodes: the backend emits TWO checks per node (availability + maintenance).
+    // Collapse them into ONE row per node so the name isn't shown twice.
+    const nodeChecks=by('node');
+    const nodeNames=[...new Set(nodeChecks.map(c=>c.id.replace(/^[a-z]+:/,'')))];
+    const nodeRow=n=>{
+      const av=nodeChecks.find(c=>c.id==='node:'+n)||{};
+      const mt=nodeChecks.find(c=>c.id==='maint:'+n)||{};
+      const ok=(av.ok!==false)&&(mt.ok!==false);
+      const status=(av.detail||'').replace(' · host del grupo','').replace('status=','')||'desconocido';
+      const maintTxt=mt.ok?'sin mantenimiento':'<b class="state failed">EN MANTENIMIENTO</b>';
+      return `<tr><td style="width:22px"><span class="dot ${ok?'ok':'err'}"></span></td>
+        <td>${n}${av.relevant?' <span class="pill" style="color:#8ab4f8">grupo</span>':''}</td>
+        <td class="muted">${status} · ${maintTxt}</td></tr>`;
+    };
+    const nodesSect=nodeNames.length?`<div class="pfsec"><h3>Nodos / mantenimiento</h3><table><tbody>${nodeNames.map(nodeRow).join('')}</tbody></table></div>`:'';
     // Storage gets a richer, explicit table (the validation the operator cares about).
     const st=by('storage');
     const storageTbl = st.length?`<div class="pfsec"><h3>Almacenamiento (NFS / iSCSI / CIFS / NVMe-oF / local)</h3>
@@ -385,7 +400,7 @@ async function preflight(){
       <h2>Pre-flight — ${r.ok?'OK ✓':'PROBLEMAS'} · ${r.posture.mode}${r.posture.quorate?' (quorate)':''}</h2>
       <div class="body">
         ${sect('Cluster (master/standalone)', by('cluster'))}
-        ${sect('Nodos / mantenimiento', by('node'))}
+        ${nodesSect}
         ${storageTbl}
         ${sect('Arranque (boot)', by('boot'))}
       </div></div>`;

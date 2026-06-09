@@ -3,6 +3,16 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.3] - 2026-06-09
+
+### Fixed — pre-flight showed each node twice
+- The node section listed every node on **two rows** (one for availability, one
+  for maintenance) because the backend emits two checks per node, so `pve1`/`pve2`/
+  `pve3` each appeared duplicated. The rows are now **collapsed into one per node**
+  — name + optional `grupo` badge, then `<status> · sin mantenimiento` (or a red
+  **EN MANTENIMIENTO**). Also localizes the raw `status=online` / `no maintenance`
+  text to Spanish. Front-end only; the pre-flight checks themselves are unchanged.
+
 ## [1.8.2] - 2026-06-09
 
 ### Fixed — dangling autostart refs now self-heal (root cause + passive cleanup)
