@@ -3,6 +3,26 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.4] - 2026-06-09
+
+### Added — resilient updater with mirror fallback
+- The update check failed with `NameResolutionError` on hosts that can't resolve
+  `raw.githubusercontent.com`, leaving them stuck. The updater now tries the
+  configured `source` first, then **fallback mirrors** (jsDelivr: `cdn.` then
+  `fastly.`), which serve the same public repo over a different CDN/DNS path and
+  commonly succeed where the GitHub raw host is blocked or unresolvable.
+  - `_update_sources()`: ordered, de-duped list (explicit/configured source +
+    `updates.mirrors`, default jsDelivr). `check_update`/`apply_update` walk it
+    until one answers; the response/result reports which `source` was used and,
+    on total failure, the per-mirror errors. `apply_update` always pulls the
+    whole file set from a **single** mirror (never mixes files).
+  - Host-side `pp-maintenance.sh` gained the same `$SOURCE → $MIRRORS` fallback.
+  - `updates.mirrors` is configurable; the default covers the offline-from-GitHub
+    case out of the box.
+- NOTE: a host already stuck on an old build can't pull this fix by itself
+  (the broken path is the very thing being fixed) — it needs one out-of-band
+  bootstrap; afterwards updates self-heal via the mirrors.
+
 ## [1.8.3] - 2026-06-09
 
 ### Fixed — pre-flight showed each node twice

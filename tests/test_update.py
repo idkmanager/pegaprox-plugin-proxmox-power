@@ -62,7 +62,7 @@ def test_apply_update_validates_and_writes(plugin, monkeypatch, tmp_path):
     monkeypatch.setattr(plugin, '_fetch_remote_text',
                         lambda src, name, timeout=10: files[name])
     res = plugin.apply_update('http://x')
-    assert res == {'applied': True, 'from': '1.0.0', 'to': '1.5.0'}
+    assert res == {'applied': True, 'from': '1.0.0', 'to': '1.5.0', 'source': 'http://x'}
     assert json.loads((tmp_path / 'manifest.json').read_text())['version'] == '1.5.0'
     assert 'new valid python' in (tmp_path / '__init__.py').read_text()
     assert (tmp_path / 'manifest.json.bak').exists()  # backup kept
@@ -106,6 +106,39 @@ def test_apply_update_refuses_downgrade(plugin, monkeypatch, tmp_path):
     # ...but forced downgrade is allowed
     res = plugin.apply_update('http://x', allow_downgrade=True)
     assert res['to'] == '1.0.0'
+
+
+def test_check_update_falls_back_to_mirror(plugin, monkeypatch):
+    # Primary (raw.githubusercontent) unreachable -> jsDelivr mirror answers.
+    monkeypatch.setattr(plugin, '_local_version', lambda: '1.0.0')
+    monkeypatch.setattr(plugin, '_load_config', lambda: {'groups': []})  # pure defaults
+
+    def fetch(src, name, timeout=10):
+        if 'raw.githubusercontent.com' in src:
+            raise RuntimeError('NameResolutionError')
+        return json.dumps({'version': '1.2.0'})
+    monkeypatch.setattr(plugin, '_fetch_remote_text', fetch)
+    r = plugin.check_update()
+    assert r['update_available'] is True and r['latest'] == '1.2.0'
+    assert 'jsdelivr' in (r['source'] or '')
+
+
+def test_apply_update_falls_back_to_mirror(plugin, monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin, 'PLUGIN_DIR', str(tmp_path))
+    monkeypatch.setattr(plugin, '_load_config', lambda: {'groups': []})
+    (tmp_path / 'manifest.json').write_text(json.dumps({'version': '1.0.0'}))
+    (tmp_path / '__init__.py').write_text('# old\n')
+    (tmp_path / 'power.html').write_text('<html>old</html>')
+    files = {'manifest.json': json.dumps({'version': '1.5.0'}),
+             '__init__.py': 'X = 1\n', 'power.html': '<html>new</html>'}
+
+    def fetch(src, name, timeout=10):
+        if 'raw.githubusercontent.com' in src:
+            raise RuntimeError('dns fail')
+        return files[name]
+    monkeypatch.setattr(plugin, '_fetch_remote_text', fetch)
+    res = plugin.apply_update()
+    assert res['applied'] and res['to'] == '1.5.0' and 'jsdelivr' in res['source']
 
 
 def test_apply_update_rejects_empty_html(plugin, monkeypatch, tmp_path):

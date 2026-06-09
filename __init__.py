@@ -1140,6 +1140,14 @@ UPDATE_FILES = ('__init__.py', 'manifest.json', 'power.html')
 
 _DEFAULT_UPDATE_SETTINGS = {
     'source': 'https://raw.githubusercontent.com/alfonsokuen/pegaprox-plugin-proxmox-power/main',
+    # Fallback mirrors tried in order when the primary source is unreachable
+    # (e.g. a host whose DNS can't resolve raw.githubusercontent.com). jsDelivr
+    # serves the same public repo over a different CDN/DNS path, so it commonly
+    # succeeds where the GitHub raw host is blocked or unresolvable.
+    'mirrors': [
+        'https://cdn.jsdelivr.net/gh/alfonsokuen/pegaprox-plugin-proxmox-power@main',
+        'https://fastly.jsdelivr.net/gh/alfonsokuen/pegaprox-plugin-proxmox-power@main',
+    ],
     'auto_apply': False,
     'check_interval_hours': 24,
 }
@@ -1187,18 +1195,41 @@ def _fetch_remote_text(source, name, timeout=10):
     return r.text
 
 
+def _update_sources(explicit=None):
+    """Ordered, de-duped list of mirror base URLs to try: the explicit/configured
+    source first, then the fallback mirrors. A single unreachable host (blocked
+    DNS, dead CDN) then never blocks updates on its own."""
+    s = _update_settings()
+    primary = explicit or s.get('source') or _DEFAULT_UPDATE_SETTINGS['source']
+    mirrors = s.get('mirrors')
+    if not isinstance(mirrors, list):
+        mirrors = _DEFAULT_UPDATE_SETTINGS['mirrors']
+    out, seen = [], set()
+    for u in [primary, *mirrors]:
+        u = (u or '').rstrip('/')
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
 def check_update(source=None):
-    """Compare local manifest version against the remote source. Never raises."""
-    source = source or _update_settings()['source']
+    """Compare local manifest version against the remote source. Never raises.
+    Tries every mirror in order and reports the one that answered."""
+    sources = _update_sources(source)
     cur = _local_version()
-    try:
-        remote = json.loads(_fetch_remote_text(source, 'manifest.json'))
-        latest = remote.get('version', '0')
-        return {'current': cur, 'latest': latest,
-                'update_available': version_gt(latest, cur), 'source': source}
-    except Exception as e:
-        return {'current': cur, 'latest': None, 'update_available': False,
-                'source': source, 'error': str(e)[:200]}
+    errors = []
+    for src in sources:
+        try:
+            remote = json.loads(_fetch_remote_text(src, 'manifest.json'))
+            latest = remote.get('version', '0')
+            return {'current': cur, 'latest': latest,
+                    'update_available': version_gt(latest, cur), 'source': src}
+        except Exception as e:
+            errors.append(f'{src}: {str(e)[:120]}')
+    return {'current': cur, 'latest': None, 'update_available': False,
+            'source': sources[0] if sources else None,
+            'error': ' | '.join(errors)[:300] or 'no update sources'}
 
 
 def apply_update(source=None, allow_downgrade=False):
@@ -1210,8 +1241,19 @@ def apply_update(source=None, allow_downgrade=False):
     (re-applying the same version is allowed, for repair). Each replaced file is
     backed up to <file>.bak.
     """
-    source = source or _update_settings()['source']
-    downloaded = {name: _fetch_remote_text(source, name) for name in UPDATE_FILES}
+    # Download the WHOLE file set from a single reachable mirror (never mix files
+    # across mirrors). Try each in order until one serves them all.
+    sources = _update_sources(source)
+    downloaded, used, errors = None, None, []
+    for src in sources:
+        try:
+            downloaded = {name: _fetch_remote_text(src, name) for name in UPDATE_FILES}
+            used = src
+            break
+        except Exception as e:
+            errors.append(f'{src}: {str(e)[:120]}')
+    if downloaded is None:
+        raise RuntimeError('no update source reachable — ' + ' | '.join(errors))
 
     new_manifest = json.loads(downloaded['manifest.json'])
     new_ver = new_manifest.get('version', '0')
@@ -1246,7 +1288,7 @@ def apply_update(source=None, allow_downgrade=False):
         with open(tmp, 'w', encoding='utf-8') as f:
             f.write(content)
         os.replace(tmp, path)
-    return {'applied': True, 'from': cur, 'to': new_ver}
+    return {'applied': True, 'from': cur, 'to': new_ver, 'source': used}
 
 
 # ---------------------------------------------------------------------------

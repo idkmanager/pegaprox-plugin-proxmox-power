@@ -21,6 +21,10 @@ DEST="$PEGAPROX_DIR/plugins/$PLUGIN_ID"
 DB="$PEGAPROX_DIR/config/pegaprox.db"
 CACHE="${CACHE_DIR:-/usr/local/lib/proxmox-power}"
 SOURCE="${SOURCE:-}"
+# Fallback mirrors (different CDN/DNS path) tried after $SOURCE, so a host that
+# can't resolve raw.githubusercontent.com still updates. Override via the conf.
+MIRRORS_DEFAULT="https://cdn.jsdelivr.net/gh/alfonsokuen/pegaprox-plugin-proxmox-power@main https://fastly.jsdelivr.net/gh/alfonsokuen/pegaprox-plugin-proxmox-power@main"
+MIRRORS="${MIRRORS:-$MIRRORS_DEFAULT}"
 AUTO_UPDATE="${AUTO_UPDATE:-false}"
 SVC_USER="${SVC_USER:-pegaprox}"
 RUNTIME_FILES="__init__.py manifest.json power.html"
@@ -43,23 +47,33 @@ PY
 changed=0
 
 # --- 1. AUTO-UPDATE: refresh the cache from SOURCE if reachable and newer -----
-if [ "$AUTO_UPDATE" = "true" ] && [ -n "$SOURCE" ]; then
+if [ "$AUTO_UPDATE" = "true" ]; then
   TMP="$(mktemp -d)"
-  if curl -fsSL --max-time 20 "$SOURCE/manifest.json" -o "$TMP/manifest.json" 2>/dev/null; then
+  # Pull manifest from the first reachable base (configured SOURCE, then mirrors).
+  BASE_OK=""
+  for BASE in $SOURCE $MIRRORS; do
+    [ -n "$BASE" ] || continue
+    if curl -fsSL --max-time 20 "$BASE/manifest.json" -o "$TMP/manifest.json" 2>/dev/null; then
+      BASE_OK="$BASE"; break
+    fi
+  done
+  if [ -n "$BASE_OK" ]; then
     RV="$(ver "$TMP/manifest.json")"; CV="$(ver "$CACHE/manifest.json")"
     if vgt "$RV" "$CV"; then
       ok=1
       for f in __init__.py power.html; do
-        curl -fsSL --max-time 20 "$SOURCE/$f" -o "$TMP/$f" 2>/dev/null || ok=0
+        curl -fsSL --max-time 20 "$BASE_OK/$f" -o "$TMP/$f" 2>/dev/null || ok=0
       done
       if [ "$ok" = 1 ] && python3 -m py_compile "$TMP/__init__.py" 2>/dev/null && [ -s "$TMP/power.html" ]; then
         mkdir -p "$CACHE"
         cp -f "$TMP/manifest.json" "$TMP/__init__.py" "$TMP/power.html" "$CACHE/"
-        log "cache updated $CV -> $RV from $SOURCE"
+        log "cache updated $CV -> $RV from $BASE_OK"
       else
         log "remote $RV failed validation; kept cache $CV"
       fi
     fi
+  else
+    log "no update source reachable (tried: $SOURCE $MIRRORS)"
   fi
   rm -rf "$TMP"
 fi
