@@ -3,6 +3,15 @@
 All notable changes to this plugin are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.5] - 2026-06-12
+
+### Added — Cloud (Modern view) theme
+- When PegaProx embeds the plugin with `?theme=cloud`, the frontend repaints
+  itself with the Modern view design tokens (deep-blue surfaces, cyan accent,
+  rounded cards) so it blends into the new layout instead of its standalone dark
+  skin. Absent/unknown theme keeps the built-in dark theme. Pure additive CSS +
+  a pre-paint theme hook; no behaviour or API change.
+
 ## [1.8.4] - 2026-06-09
 
 ### Added — resilient updater with mirror fallback

@@ -43,6 +43,14 @@ topological sort over `depends_on`, tie-broken by `order` then `suborder`.
 - **Audit.** Every config change and execution is written to the PegaProx audit
   log.
 
+## Theming
+
+The frontend inherits the host theme. When PegaProx embeds the plugin with
+`?theme=cloud` (the **Modern view / Cloud** layout), the UI repaints itself with
+the Cloud design tokens (deep-blue surfaces, cyan accent, rounded cards) so it
+blends into the new layout; any other / absent value keeps the built-in dark
+theme. Pre-paint hook + additive CSS only — no behaviour change.
+
 ## API
 
 All routes are dispatched under `/api/plugins/proxmox-power/api/<path>`:
